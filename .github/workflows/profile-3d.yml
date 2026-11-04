@@ -20,9 +20,9 @@ jobs:
           USERNAME: Pedro-Lopes-Monteiro
       # The action always draws the radar and the language donut, and its
       # isometric angle is fixed at 30°. --angle is the ground tilt in degrees
-      # (walls stay vertical). Candidates: 8, 14, 20.
+      # (walls stay vertical). 8° is the chosen tilt.
       - name: Compact night-rainbow SVG
-        run: python3 scripts/compact-profile-3d.py --angle 14
+        run: python3 scripts/compact-profile-3d.py --angle 8
       - name: Commit & Push
         run: |
           git config user.name github-actions

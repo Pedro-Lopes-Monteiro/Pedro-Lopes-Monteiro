@@ -35,8 +35,8 @@ NUM_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = ROOT / "profile-3d-contrib" / "profile-night-rainbow.svg"
 DEFAULT_OUTPUT = ROOT / "profile-3d-contrib" / "profile-night-rainbow-compact.svg"
-# Middle of the candidates Pedro is comparing (8, 14, 20). Not a final pick.
-DEFAULT_ANGLE = 14.0
+# Chosen ground tilt: weeks lie near horizontal, walls stay vertical.
+DEFAULT_ANGLE = 8.0
 
 
 def local(tag: str) -> str:
