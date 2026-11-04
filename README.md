@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./profile-3d-contrib/profile-night-rainbow.svg" alt="Cidade 3D das contribuições de Pedro Lopes Monteiro no GitHub (tema night-rainbow)" width="100%"/>
+  <img src="./profile-3d-contrib/profile-night-rainbow-compact.svg" alt="Cidade 3D horizontal das contribuições de Pedro Lopes Monteiro no GitHub (tema night-rainbow)" width="100%"/>
 </p>
 
 <p align="center">
