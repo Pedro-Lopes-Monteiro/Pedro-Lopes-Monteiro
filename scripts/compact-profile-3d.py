@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
-"""Turn the night-rainbow 3D profile SVG into a short, wide city.
+"""Rebuild the night-rainbow city at a shallower ground angle.
 
-yoshi389111/github-profile-3d-contrib (see src/type.ts and src/create-svg.ts)
-can recolor a chart via SETTING_JSON and can emit radar_contrib_only or
-pie_lang_only files, but a full chart always includes the radar and the
-language donut. The isometric angle is a hardcoded 30 degrees in
-src/create-3d-contrib.ts (ANGLE), with no size or camera setting.
+yoshi389111/github-profile-3d-contrib cannot hide the radar or the language
+donut, and its isometric angle is hardcoded to 30° (ANGLE in
+src/create-3d-contrib.ts). Rotating that finished drawing in 2D leans the
+walls over with the ground, so the buildings collapse into a flat ribbon.
 
-This reads the generated profile-night-rainbow.svg, drops those two charts,
-rotates the city by -30 degrees so the week strip runs left to right, and
-writes a tight viewBox. The contribution count, stars, forks, and date stay.
+This script drops the two charts, reads each bar's footprint and height out
+of the generated SVG, and redraws the faces with the generator's own
+projection at --angle degrees. Walls stay vertical. Smaller angles lay the
+week strip closer to horizontal while the contribution height stays put.
+Night-rainbow classes and the contribution line are unchanged.
+
+    python3 scripts/compact-profile-3d.py --angle 14
 """
 
 from __future__ import annotations
@@ -21,8 +24,10 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 SVG_NS = "http://www.w3.org/2000/svg"
-# Matches ANGLE in github-profile-3d-contrib src/create-3d-contrib.ts.
-ISOMETRIC_ANGLE = 30.0
+# ANGLE and the 1280px canvas in github-profile-3d-contrib.
+SOURCE_ANGLE = 30.0
+CANVAS_WIDTH = 1280.0
+DX = CANVAS_WIDTH / 64.0
 
 FUNC_RE = re.compile(r"([A-Za-z]+)\s*\(([^)]*)\)")
 NUM_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
@@ -30,6 +35,8 @@ NUM_RE = re.compile(r"[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?")
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_INPUT = ROOT / "profile-3d-contrib" / "profile-night-rainbow.svg"
 DEFAULT_OUTPUT = ROOT / "profile-3d-contrib" / "profile-night-rainbow-compact.svg"
+# Middle of the candidates Pedro is comparing (8, 14, 20). Not a final pick.
+DEFAULT_ANGLE = 14.0
 
 
 def local(tag: str) -> str:
@@ -71,19 +78,19 @@ def scale(sx: float, sy: float) -> list[list[float]]:
 
 def rotate(deg: float) -> list[list[float]]:
     radians = math.radians(deg)
-    c = math.cos(radians)
-    s = math.sin(radians)
-    return [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]]
+    cosine = math.cos(radians)
+    sine = math.sin(radians)
+    return [[cosine, -sine, 0.0], [sine, cosine, 0.0], [0.0, 0.0, 1.0]]
 
 
 def skew_x(deg: float) -> list[list[float]]:
-    t = math.tan(math.radians(deg))
-    return [[1.0, t, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    tangent = math.tan(math.radians(deg))
+    return [[1.0, tangent, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
 
 def skew_y(deg: float) -> list[list[float]]:
-    t = math.tan(math.radians(deg))
-    return [[1.0, 0.0, 0.0], [t, 1.0, 0.0], [0.0, 0.0, 1.0]]
+    tangent = math.tan(math.radians(deg))
+    return [[1.0, 0.0, 0.0], [tangent, 1.0, 0.0], [0.0, 0.0, 1.0]]
 
 
 def parse_transform(value: str | None) -> list[list[float]]:
@@ -131,6 +138,12 @@ def direct_text(element: ET.Element) -> str:
     return (element.text or "").strip()
 
 
+def fmt(value: float) -> str:
+    """Match github-profile-3d-contrib's toFixed(2), without trailing zeros."""
+    rounded = float(f"{value:.2f}")
+    return f"{rounded:.2f}".rstrip("0").rstrip(".")
+
+
 def find_groups(root: ET.Element) -> tuple[ET.Element, ET.Element, list[ET.Element]]:
     """Return (city, footer, removable charts) among the svg's direct children."""
     city = None
@@ -159,6 +172,101 @@ def find_groups(root: ET.Element) -> tuple[ET.Element, ET.Element, list[ET.Eleme
     return city, footer, removable
 
 
+def projection(angle: float) -> dict[str, float]:
+    """Face metrics from create-3d-contrib.ts at an arbitrary ANGLE."""
+    dy = DX * math.tan(math.radians(angle))
+    dxx = DX * 0.9
+    dyy = dy * 0.9
+    scale_side = math.hypot(dxx, dyy) / dxx
+    # atan(dxx / 2 / dyy) in degrees, same as the generator's atan().
+    skew_x = math.degrees(math.atan((dxx / 2.0) / dyy))
+    top_scale_y = (2.0 * dyy) / dxx
+    return {
+        "dy": dy,
+        "dxx": dxx,
+        "dyy": dyy,
+        "scale_side": scale_side,
+        "skew_x": skew_x,
+        "top_scale_y": top_scale_y,
+    }
+
+
+def bar_parts(bar: ET.Element) -> tuple[ET.Element, ET.Element, ET.Element]:
+    rects = [node for node in list(bar) if local(node.tag) == "rect"]
+    if len(rects) != 3:
+        raise SystemExit("Expected each contribution bar to have a top, left, and right face.")
+    return rects[0], rects[1], rects[2]
+
+
+def ground_of(bar: ET.Element, source: dict[str, float]) -> tuple[float, float, float]:
+    tx_ty = numbers(bar.get("transform") or "")
+    if len(tx_ty) < 2:
+        raise SystemExit(f"Bar is missing a translate: {bar.get('transform')}")
+    _, left, _ = bar_parts(bar)
+    height_attr = float(left.get("height") or 0)
+    cal_height = height_attr * source["scale_side"]
+    if cal_height < 3.05:
+        cal_height = 3.0
+    base_x = tx_ty[0]
+    base_y = tx_ty[1] + cal_height
+    return base_x, base_y, cal_height
+
+
+def rewrite_bar(
+    bar: ET.Element,
+    angle: float,
+    base_x: float,
+    base_y: float,
+    cal_height: float,
+    metrics: dict[str, float],
+) -> None:
+    top, left, right = bar_parts(bar)
+    stub = cal_height if cal_height <= 3.05 else 3.0
+    side_h = float(f"{cal_height / metrics['scale_side']:.2f}")
+    stub_h = float(f"{stub / metrics['scale_side']:.2f}")
+    top_y = base_y - cal_height
+
+    top.set(
+        "transform",
+        f"skewY({fmt(-angle)}) skewX({fmt(metrics['skew_x'])}) "
+        f"scale(1 {fmt(metrics['top_scale_y'])})",
+    )
+    side_scale = f"scale(1 {fmt(metrics['scale_side'])})"
+    left.set("transform", f"skewY({fmt(angle)}) {side_scale}")
+    left.set("height", fmt(side_h))
+    right.set(
+        "transform",
+        f"translate({fmt(metrics['dxx'])} {fmt(metrics['dyy'])}) "
+        f"skewY({fmt(-angle)}) {side_scale}",
+    )
+    right.set("height", fmt(side_h))
+    bar.set("transform", f"translate({fmt(base_x)} {fmt(top_y)})")
+
+    for face in (left, right):
+        for child in list(face):
+            if local(child.tag) == "animate" and child.get("attributeName") == "height":
+                child.set("values", f"{fmt(stub_h)};{fmt(side_h)}")
+    for child in list(bar):
+        if local(child.tag) != "animateTransform":
+            continue
+        child.set(
+            "values",
+            f"{fmt(base_x)} {fmt(base_y - stub)};{fmt(base_x)} {fmt(top_y)}",
+        )
+
+
+def reproject_city(city: ET.Element, angle: float) -> None:
+    source = projection(SOURCE_ANGLE)
+    target = projection(angle)
+    # Scale only the ground's Y. Bar height is not multiplied, so walls stay tall.
+    y_scale = target["dy"] / source["dy"]
+    for bar in list(city):
+        if local(bar.tag) != "g":
+            continue
+        base_x, base_y, cal_height = ground_of(bar, source)
+        rewrite_bar(bar, angle, base_x, base_y * y_scale, cal_height, target)
+
+
 def city_points(city: ET.Element) -> list[tuple[float, float]]:
     points: list[tuple[float, float]] = []
     for bar in list(city):
@@ -170,18 +278,14 @@ def city_points(city: ET.Element) -> list[tuple[float, float]]:
                 continue
             x = float(node.get("x") or 0)
             y = float(node.get("y") or 0)
-            w = float(node.get("width") or 0)
-            h = float(node.get("height") or 0)
+            width = float(node.get("width") or 0)
+            height = float(node.get("height") or 0)
             matrix = mul(bar_matrix, parse_transform(node.get("transform")))
-            for px, py in ((x, y), (x + w, y), (x + w, y + h), (x, y + h)):
+            for px, py in ((x, y), (x + width, y), (x + width, y + height), (x, y + height)):
                 points.append(apply(matrix, px, py))
     if not points:
         raise SystemExit("The contribution city has no bars to measure.")
     return points
-
-
-def fmt(value: float) -> str:
-    return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
 def place_footer(footer: ET.Element, width: float, baseline: float) -> None:
@@ -216,7 +320,6 @@ def place_footer(footer: ET.Element, width: float, baseline: float) -> None:
         label.set("y", fmt(baseline))
         label.set("text-anchor", "start")
 
-    # Star then fork, same order the generator writes them.
     icon_x = (360, 520)
     for index, icon in enumerate(icons[:2]):
         x = icon_x[index] if index < len(icon_x) else 360 + index * 160
@@ -233,7 +336,9 @@ def place_footer(footer: ET.Element, width: float, baseline: float) -> None:
         date.set("dominant-baseline", "hanging")
 
 
-def compact(source: Path, dest: Path) -> tuple[float, float]:
+def compact(source: Path, dest: Path, angle: float) -> tuple[float, float]:
+    if not 4.0 <= angle <= 30.0:
+        raise SystemExit("--angle must be between 4 and 30 degrees.")
     ET.register_namespace("", SVG_NS)
     tree = ET.parse(source)
     root = tree.getroot()
@@ -241,28 +346,24 @@ def compact(source: Path, dest: Path) -> tuple[float, float]:
     for node in removable:
         root.remove(node)
 
-    rotated = [apply(rotate(-ISOMETRIC_ANGLE), x, y) for x, y in city_points(city)]
-    min_x = min(x for x, _ in rotated)
-    min_y = min(y for _, y in rotated)
-    max_x = max(x for x, _ in rotated)
-    max_y = max(y for _, y in rotated)
+    reproject_city(city, angle)
+    points = city_points(city)
+    min_x = min(x for x, _ in points)
+    min_y = min(y for _, y in points)
+    max_x = max(x for x, _ in points)
+    max_y = max(y for _, y in points)
 
     pad_x = 20.0
     pad_top = 32.0
-    # Room for the 32px contribution line under the city.
     pad_bottom = 52.0
-    tx = pad_x - min_x
-    ty = pad_top - min_y
+    shift_x = pad_x - min_x
+    shift_y = pad_top - min_y
     city_w = max_x - min_x
     city_h = max_y - min_y
     width = max(city_w + pad_x * 2, 720.0)
     height = pad_top + city_h + pad_bottom
-    if width <= height:
-        raise SystemExit(
-            f"Compact canvas is not wider than it is tall ({width:.1f}x{height:.1f})."
-        )
 
-    city.set("transform", f"translate({fmt(tx)} {fmt(ty)}) rotate({fmt(-ISOMETRIC_ANGLE)})")
+    city.set("transform", f"translate({fmt(shift_x)} {fmt(shift_y)})")
 
     for child in list(root):
         if local(child.tag) == "rect" and "fill-bg" in class_tokens(child):
@@ -272,16 +373,12 @@ def compact(source: Path, dest: Path) -> tuple[float, float]:
             child.set("height", fmt(height))
 
     place_footer(footer, width, pad_top + city_h + 36.0)
-
     root.set("width", fmt(width))
     root.set("height", fmt(height))
     root.set("viewBox", f"0 0 {fmt(width)} {fmt(height)}")
 
     dest.parent.mkdir(parents=True, exist_ok=True)
     tree.write(dest, encoding="unicode", xml_declaration=False)
-    # ElementTree does not write the xmlns when the root already carries the
-    # Clark notation and the default namespace is registered; keep the root
-    # explicit so renderers accept the file.
     text = dest.read_text(encoding="utf-8")
     if "xmlns=" not in text:
         text = text.replace("<svg ", '<svg xmlns="http://www.w3.org/2000/svg" ', 1)
@@ -289,13 +386,31 @@ def compact(source: Path, dest: Path) -> tuple[float, float]:
     return width, height
 
 
+def parse_args(argv: list[str]) -> tuple[float, Path, Path]:
+    angle = DEFAULT_ANGLE
+    paths: list[Path] = []
+    index = 0
+    while index < len(argv):
+        token = argv[index]
+        if token == "--angle":
+            if index + 1 >= len(argv):
+                raise SystemExit("--angle needs a number of degrees, for example --angle 14")
+            angle = float(argv[index + 1])
+            index += 2
+            continue
+        paths.append(Path(token))
+        index += 1
+    source = paths[0] if paths else DEFAULT_INPUT
+    dest = paths[1] if len(paths) > 1 else DEFAULT_OUTPUT
+    return angle, source, dest
+
+
 def main() -> None:
-    source = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_INPUT
-    dest = Path(sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_OUTPUT
+    angle, source, dest = parse_args(sys.argv[1:])
     if not source.is_file():
         raise SystemExit(f"Missing generated SVG: {source}")
-    width, height = compact(source, dest)
-    print(f"wrote {dest} ({width:.1f} x {height:.1f})")
+    width, height = compact(source, dest, angle)
+    print(f"wrote {dest} angle={angle:g} ({width:.1f} x {height:.1f})")
 
 
 if __name__ == "__main__":

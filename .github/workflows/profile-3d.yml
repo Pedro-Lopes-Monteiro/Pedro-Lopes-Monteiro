@@ -18,10 +18,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           USERNAME: Pedro-Lopes-Monteiro
-      # The action always draws the radar and the language donut, and the
-      # isometric angle is fixed at 30°. Produce the wide city the README uses.
+      # The action always draws the radar and the language donut, and its
+      # isometric angle is fixed at 30°. --angle is the ground tilt in degrees
+      # (walls stay vertical). Candidates: 8, 14, 20.
       - name: Compact night-rainbow SVG
-        run: python3 scripts/compact-profile-3d.py
+        run: python3 scripts/compact-profile-3d.py --angle 14
       - name: Commit & Push
         run: |
           git config user.name github-actions
