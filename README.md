@@ -72,14 +72,6 @@ flowchart LR
 - Dashboards de BI, sites institucionais, landing pages e extensões de navegador.
 </details>
 
-## 🎓 Projetos abertos
-
-| Projeto | Stack | Sobre |
-|---|---|---|
-| [Inova Week App](https://github.com/Pedro-Lopes-Monteiro/Trabalho_B2) | React Native · Expo · Supabase | App do evento Inova Week 2025, com login, grupos e avaliações |
-| [Campus BET](https://github.com/Campus-BET-cc5m/campus_bet) | Python | Projeto em equipe na UVV |
-| [Gestão de Estoque](https://github.com/Pedro-Lopes-Monteiro/ProjetoPOO2) | C# · WinForms · MySQL | CRUD de estoque com POO e persistência |
-
 ## 📈 Atividade
 
 <p align="center">
