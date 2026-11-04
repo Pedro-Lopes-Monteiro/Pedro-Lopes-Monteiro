@@ -1,15 +1,11 @@
 <p align="center">
-  <img src="./assets/header.svg" alt="whoami → Pedro Lopes Monteiro, Full Stack Developer" width="100%"/>
+  <img src="./profile-3d-contrib/profile-night-rainbow.svg" alt="Cidade 3D das contribuições de Pedro Lopes Monteiro no GitHub (tema night-rainbow)" width="100%"/>
 </p>
 
 <p align="center">
   <a href="https://www.linkedin.com/in/pedro-lopes-monteiro/">LinkedIn</a> ·
   <a href="mailto:plmonteiro.com@gmail.com">plmonteiro.com@gmail.com</a> ·
   Vila Velha, ES 🇧🇷
-</p>
-
-<p align="center">
-  <img src="./profile-3d-contrib/profile-night-rainbow.svg" alt="Cidade 3D das contribuições de Pedro Lopes Monteiro no GitHub (tema night-rainbow)" width="100%"/>
 </p>
 
 ```ts
